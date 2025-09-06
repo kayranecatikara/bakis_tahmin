@@ -1,0 +1,24 @@
+# Teknik Notlar / Uyarılar
+
+- TrueDepth/ARKit veri yolu sadece **gerçek cihazda**; Simulator desteklemez.
+- iOS projeksiyon:
+  - `ARFaceAnchor.lookAtPoint` (yüz uzayı) + yüz→dünya dönüşümü,
+  - Ekran düzlemiyle kesişim → normalize (x,y).
+  - Alternatif: left/rightEye forward vector + ray-plane.
+- Kalibrasyon:
+  - 5–9 nokta yeterli; 9 tavsiye. Afine ile başla. Gerekirse 2. derece polinom.
+  - Veriyi normalize çalış, cihaz/ekran boyutuna bağlı bağımsızlık sağlar.
+- 1-Euro Filter:
+  - `mincutoff` ~ 1.0, `beta` ~ 0.007 başlangıç; cihaz ve kullanıcıya göre ayarla.
+- Orientation:
+  - İlk sürüm portrait. Landscape için dönüşüm matrisi ekle.
+- Güvenlik/İzin:
+  - `NSCameraUsageDescription` metni anlamlı olsun; App Review’da açıklayıcı.
+- Build/Test:
+  - Xcode’da Team seç, “Automatically manage signing”.
+  - Cihazda `Settings → General → VPN & Device Management` altında developer app’e Trust ver.
+- Performans:
+  - iOS’ta frame başına tek MethodChannel çağrısı. Gerekirse değerleri batch’le.
+  - Flutter tarafında yalnız overlay repaint; büyük setState’lerden kaçın.
+- Gelecek:
+  - App Clip (QR ile anında), TestFlight public link + QR, parametre telemetri.

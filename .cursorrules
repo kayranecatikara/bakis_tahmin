@@ -1,0 +1,43 @@
+# Cursor Kuralları — FocusGuard Gaze
+
+[AMAÇ]
+- Sadece bakış noktası tahmini; sınıflandırma/gesture yok.
+- iOS (ARKit) native hesaplar, Flutter sadece çizer ve filtreler.
+
+[GENEL]
+- Flutter null-safety, küçük fonksiyonlar, bol yorum satırı.
+- Ek bağımlılık ekleme (gerekmedikçe). 1-Euro filtresini kendin yaz.
+- MethodChannel adı: "gaze". start/stop ve onFrame’ı standartlaştır.
+- (x,y) normalize [0..1], sol-üst (0,0). Flutter piksele çevirir.
+- Orientation: İlk sürüm portrait. Kodda TODO bırak.
+- Her PR’da README/todo güncellenmiş olsun.
+
+[iOS TARAFI]
+- Swift 5+, `ARFaceTrackingConfiguration`. `ARSessionDelegate`.
+- `lookAtPoint` veya eye forward vectors → ray-plane → normalize (x,y).
+- Her frame tek invoke (onFrame). Gerekirse throttling.
+- `NSCameraUsageDescription` Info.plist. Signing otomatik.
+- Validity: Yüz kaybında `valid=false`.
+
+[FLUTTER TARAFI]
+- GazeFrame: { x, y, conf, ts, valid }.
+- 1-Euro filter parametreleri ayarlanabilir yap.
+- Kalibrasyon: 5–9 nokta, afine fit. Persist et.
+- UI: Start/Stop, Calibration, Overlay toggle, basit FPS gösterimi.
+
+[TEST]
+- Gerçek cihazda dene. Simulator’da “mock” sağlama (gerekirse).
+- Log JSONL opsiyon. Dönen verileri manuel doğrula.
+
+[KOD STİLİ]
+- Türkçe yorumlar + İngilizce değişken isimleri.
+- Hata mesajları açıklayıcı. try/catch ve guard’lar net.
+- Büyük fonksiyonları parçala. State sızıntısı yok.
+
+[İSTEMEDİKLERİMİZ]
+- Aşırı bağımlılık, gereksiz mimari ağırlık.
+- Simulator için karmaşık stub’lar (şimdilik gerek yok).
+- Erken aşamada sınıflandırma/gesture denemeleri.
+
+[LEAD]
+- İlk görev M1’deki iskeleti üret ve çalıştır: iOS köprüsü + Flutter overlay + kalibrasyon + 1-Euro.
