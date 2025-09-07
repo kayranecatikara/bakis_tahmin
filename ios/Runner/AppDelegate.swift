@@ -7,11 +7,11 @@ import AVFoundation
 @objc class AppDelegate: FlutterAppDelegate {
     private var gazeProvider: GazeProvider?
     
-    override func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
-    ) -> Bool {
-        GeneratedPluginRegistrant.register(with: self)
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    GeneratedPluginRegistrant.register(with: self)
         
         // Flutter root view controller'ı al
         guard let controller = window?.rootViewController as? FlutterViewController else {
@@ -21,6 +21,6 @@ import AVFoundation
         // GazeProvider'ı başlat
         gazeProvider = GazeProvider(controller: controller)
         
-        return super.application(application, didFinishLaunchingWithOptions: launchOptions)
-    }
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
 }

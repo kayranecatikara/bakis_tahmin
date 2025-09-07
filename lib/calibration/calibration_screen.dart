@@ -34,9 +34,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   StreamSubscription<GazeFrame>? _gazeSubscription;
 
   // Toplama parametreleri
-  static const int _framesPerPoint = 30; // Her nokta için 30 frame topla
+  static const int _framesPerPoint = 60; // Her nokta için 60 frame topla
   static const Duration _settleTime = Duration(
-    milliseconds: 500,
+    milliseconds: 1000,
   ); // Yerleşme süresi
 
   @override
@@ -91,10 +91,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     _collectedFrames.add(frame);
 
-    // Yeterli frame toplandıysa
-    if (_collectedFrames.length >= _framesPerPoint) {
-      _processCollectedFrames();
-    }
+    // Yeterli frame toplandıysa artık otomatik geçme yok; butonla ilerle
+    // Sadece biriktirmeye devam ediyoruz
   }
 
   void _processCollectedFrames() {
@@ -230,7 +228,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                     const SizedBox(height: 8),
                     Text(
                       _isCollecting
-                          ? 'Lütfen kırmızı noktaya bakın...'
+                          ? 'Lütfen kırmızı noktaya bakın. Yeterli örnek toplandığında alttan Kaydet ve Sonraki’ye basın.'
                           : 'Sonraki noktaya hazırlanıyor...',
                       style: const TextStyle(
                         color: Colors.white70,
@@ -278,6 +276,17 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                         child: const Text(
                           'Atla',
                           style: TextStyle(color: Colors.orange),
+                        ),
+                      ),
+                    if (_isCollecting &&
+                        _collectedFrames.length >= _framesPerPoint)
+                      ElevatedButton.icon(
+                        onPressed: _processCollectedFrames,
+                        icon: const Icon(Icons.check),
+                        label: const Text('Kaydet ve Sonraki'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
                         ),
                       ),
                   ],

@@ -1,6 +1,7 @@
 import Foundation
 import ARKit
 import Flutter
+import simd
 
 /// ARKit ile göz takibi yapan ve Flutter'a veri gönderen sınıf
 class GazeProvider: NSObject {
@@ -46,21 +47,17 @@ class GazeProvider: NSObject {
             return
         }
         
-        // ARKit desteğini kontrol et
         guard ARFaceTrackingConfiguration.isSupported else {
             result(FlutterError(code: "NOT_SUPPORTED", message: "Face tracking is not supported on this device", details: nil))
             return
         }
         
-        // Session oluştur
         session = ARSession()
         session?.delegate = self
         
-        // Configuration oluştur
         let configuration = ARFaceTrackingConfiguration()
-        configuration.isLightEstimationEnabled = false // Performans için kapat
+        configuration.isLightEstimationEnabled = false
         
-        // Session'ı başlat
         session?.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         
         isTracking = true
@@ -81,86 +78,67 @@ class GazeProvider: NSObject {
     
     // MARK: - Gaze Calculation
     
-    private func calculateGazePoint(from faceAnchor: ARFaceAnchor) -> (x: Float, y: Float, confidence: Float)? {
-        // Göz takip noktasını al
-        guard let lookAtPoint = faceAnchor.lookAtPoint else {
-            // lookAtPoint yoksa, göz transform'larından hesapla
-            return calculateGazeFromEyeTransforms(faceAnchor)
+    private func gazeUsingLookAtProjection(faceAnchor: ARFaceAnchor, frame: ARFrame) -> (x: Float, y: Float, confidence: Float)? {
+        // iOS 14+ lookAtPoint mevcutsa kullan, 3B'den ekrana projekte et
+        if #available(iOS 14.0, *) {
+            if let lp = faceAnchor.lookAtPoint {
+                // lookAtPoint yüz lokal uzayında → dünya → kamera
+                let lp4 = simd_float4(lp.x, lp.y, lp.z, 1)
+                let worldLP = faceAnchor.transform * lp4
+                // projectPoint kamera uzayında worldPoint bekler; ARKit cihaz uzayından projekte eder
+                // ARCamera.projectPoint doğrudan dünya noktasını kabul eder ve dahili olarak dönüştürür.
+                let viewport = UIScreen.main.bounds.size
+                // Portrait varsayıyoruz (ilk sürüm)
+                let pixel = frame.camera.projectPoint(simd_float3(worldLP.x, worldLP.y, worldLP.z),
+                                                       orientation: .portrait,
+                                                       viewportSize: viewport)
+                let w = Float(viewport.width)
+                let h = Float(viewport.height)
+                if w <= 0 || h <= 0 { return nil }
+                var nx = Float(pixel.x) / w
+                var ny = Float(pixel.y) / h
+                // Ön kamera ayna etkisi: X’i çevir
+                nx = 1.0 - nx
+                // Clamp [0,1]
+                nx = max(0, min(1, nx))
+                ny = max(0, min(1, ny))
+                // Basit güven: yüz anchor'ı mevcutsa orta düzey
+                let conf: Float = 0.8
+                return (nx, ny, conf)
+            }
         }
-        
-        // lookAtPoint'i normalize et
-        // ARKit'te lookAtPoint, kamera koordinat sisteminde metre cinsinden
-        // Bunu ekran koordinatlarına çevirmemiz gerekiyor
-        
-        // Basit projeksiyon (ilk versiyon)
-        // Z ekseni kameraya doğru, X sağa, Y yukarı
-        let x = lookAtPoint.x
-        let y = lookAtPoint.y
-        let z = lookAtPoint.z
-        
-        // Z negatifse (kameraya bakıyor)
-        if z < 0 {
-            // Perspektif projeksiyon
-            let screenX = -x / z  // Negatif çünkü ekran koordinatları ters
-            let screenY = -y / z
-            
-            // Normalize et [0, 1]
-            // Varsayılan FOV ve aspect ratio için basit mapping
-            let normalizedX = (screenX + 0.5).clamped(to: 0...1)
-            let normalizedY = (screenY + 0.5).clamped(to: 0...1)
-            
-            // Güven skoru (z mesafesine göre)
-            let confidence = max(0, min(1, 1.0 - abs(z) / 2.0))
-            
-            return (x: normalizedX, y: normalizedY, confidence: confidence)
-        }
-        
         return nil
     }
     
     private func calculateGazeFromEyeTransforms(_ faceAnchor: ARFaceAnchor) -> (x: Float, y: Float, confidence: Float)? {
-        // Sol ve sağ göz transform'larını al
         let leftEye = faceAnchor.leftEyeTransform
         let rightEye = faceAnchor.rightEyeTransform
         
-        // Göz pozisyonlarının ortalamasını al
         let leftPos = SIMD3<Float>(leftEye.columns.3.x, leftEye.columns.3.y, leftEye.columns.3.z)
         let rightPos = SIMD3<Float>(rightEye.columns.3.x, rightEye.columns.3.y, rightEye.columns.3.z)
         let eyeCenter = (leftPos + rightPos) / 2
         
-        // Göz yönlerini al (forward vector)
         let leftForward = -SIMD3<Float>(leftEye.columns.2.x, leftEye.columns.2.y, leftEye.columns.2.z)
         let rightForward = -SIMD3<Float>(rightEye.columns.2.x, rightEye.columns.2.y, rightEye.columns.2.z)
-        let gazeDirection = normalize((leftForward + rightForward) / 2)
+        let gazeDirection = simd_normalize((leftForward + rightForward) / 2)
         
-        // Ekran düzlemi ile kesişimi hesapla
-        // Varsayılan ekran mesafesi: 0.3 metre
         let screenDistance: Float = 0.3
         let screenPlaneZ: Float = -screenDistance
         
-        // Ray-plane intersection
-        if gazeDirection.z < 0 { // Ekrana doğru bakıyor
+        if gazeDirection.z < 0 {
             let t = (screenPlaneZ - eyeCenter.z) / gazeDirection.z
-            let intersectionPoint = eyeCenter + t * gazeDirection
-            
-            // Ekran koordinatlarına dönüştür
-            // Varsayılan ekran boyutu: 0.15m x 0.25m (portrait iPhone)
+            let p = eyeCenter + t * gazeDirection
             let screenWidth: Float = 0.15
             let screenHeight: Float = 0.25
-            
-            let screenX = (intersectionPoint.x + screenWidth/2) / screenWidth
-            let screenY = 1.0 - (intersectionPoint.y + screenHeight/2) / screenHeight // Y'yi ters çevir
-            
-            // Clamp to [0, 1]
-            let normalizedX = screenX.clamped(to: 0...1)
-            let normalizedY = screenY.clamped(to: 0...1)
-            
-            // Güven skoru
-            let confidence: Float = 0.8 // Sabit güven skoru (iyileştirilebilir)
-            
-            return (x: normalizedX, y: normalizedY, confidence: confidence)
+            var nx = (p.x + screenWidth/2) / screenWidth
+            var ny = 1.0 - (p.y + screenHeight/2) / screenHeight
+            // Ön kamera ayna etkisi: X’i çevir
+            nx = 1.0 - nx
+            nx = max(0, min(1, nx))
+            ny = max(0, min(1, ny))
+            let confidence: Float = 0.6
+            return (nx, ny, confidence)
         }
-        
         return nil
     }
 }
@@ -168,22 +146,27 @@ class GazeProvider: NSObject {
 // MARK: - ARSessionDelegate
 
 extension GazeProvider: ARSessionDelegate {
-    func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-        // Frame throttling
-        let currentTime = CACurrentMediaTime()
-        guard currentTime - lastFrameTime >= minFrameInterval else { return }
-        lastFrameTime = currentTime
-        
-        // Face anchor'ı bul
-        guard let faceAnchor = anchors.first(where: { $0 is ARFaceAnchor }) as? ARFaceAnchor else {
-            // Yüz bulunamadı
+    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        // Face anchor bul
+        guard let faceAnchor = frame.anchors.first(where: { $0 is ARFaceAnchor }) as? ARFaceAnchor else {
             sendInvalidFrame()
             return
         }
         
-        // Gaze noktasını hesapla
-        if let gazePoint = calculateGazePoint(from: faceAnchor) {
-            sendGazeFrame(x: gazePoint.x, y: gazePoint.y, confidence: gazePoint.confidence, valid: true)
+        // Throttle
+        let now = CACurrentMediaTime()
+        guard now - lastFrameTime >= minFrameInterval else { return }
+        lastFrameTime = now
+        
+        // Öncelik: lookAtPoint + projectPoint
+        if let g = gazeUsingLookAtProjection(faceAnchor: faceAnchor, frame: frame) {
+            sendGazeFrame(x: g.x, y: g.y, confidence: g.confidence, valid: true)
+            return
+        }
+        
+        // Fallback: eye-ray → screen-plane
+        if let g2 = calculateGazeFromEyeTransforms(faceAnchor) {
+            sendGazeFrame(x: g2.x, y: g2.y, confidence: g2.confidence, valid: true)
         } else {
             sendInvalidFrame()
         }
@@ -202,8 +185,7 @@ extension GazeProvider: ARSessionDelegate {
     // MARK: - Flutter Communication
     
     private func sendGazeFrame(x: Float, y: Float, confidence: Float, valid: Bool) {
-        let timestamp = Int(Date().timeIntervalSince1970 * 1000) // milliseconds
-        
+        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
         let frameData: [String: Any] = [
             "x": Double(x),
             "y": Double(y),
@@ -211,7 +193,6 @@ extension GazeProvider: ARSessionDelegate {
             "timestamp": timestamp,
             "valid": valid
         ]
-        
         DispatchQueue.main.async { [weak self] in
             self?.channel.invokeMethod("onFrame", arguments: frameData)
         }
@@ -219,7 +200,6 @@ extension GazeProvider: ARSessionDelegate {
     
     private func sendInvalidFrame() {
         let timestamp = Int(Date().timeIntervalSince1970 * 1000)
-        
         let frameData: [String: Any] = [
             "x": 0.5,
             "y": 0.5,
@@ -227,7 +207,6 @@ extension GazeProvider: ARSessionDelegate {
             "timestamp": timestamp,
             "valid": false
         ]
-        
         DispatchQueue.main.async { [weak self] in
             self?.channel.invokeMethod("onFrame", arguments: frameData)
         }
@@ -240,4 +219,5 @@ extension Float {
     func clamped(to range: ClosedRange<Float>) -> Float {
         return min(max(self, range.lowerBound), range.upperBound)
     }
+} 
 } 
