@@ -52,6 +52,17 @@ class _GazeMainScreenState extends State<GazeMainScreen> {
   late OneEuroFilter _filterX;
   late OneEuroFilter _filterY;
 
+  String _gazeZone = '—';
+  String _classifyZone(GazeFrame f) {
+    if (!f.valid) return 'Dışarısı';
+    final x = f.x;
+    final y = f.y;
+    final inside = x >= 0.0 && x <= 1.0 && y >= 0.0 && y <= 1.0;
+    if (!inside) return 'Dışarısı';
+    if (y > 0.85) return 'Kitap';
+    return 'Ekran';
+  }
+
   // Performans metrikleri
   int _fps = 0;
   int _frameCount = 0;
@@ -127,6 +138,13 @@ class _GazeMainScreenState extends State<GazeMainScreen> {
           _filteredFrame = filtered;
         });
 
+        // Bölge sınıflandırma
+        final zone = _classifyZone(filtered);
+        setState(() {
+          _currentFrame = calibratedFrame;
+          _filteredFrame = filtered;
+          _gazeZone = zone;
+        });
         // Loglama
         if (_isLogging) {
           _sessionLogger.logFrame(filtered);
@@ -135,6 +153,7 @@ class _GazeMainScreenState extends State<GazeMainScreen> {
         setState(() {
           _currentFrame = calibratedFrame;
           _filteredFrame = null;
+          _gazeZone = 'Dışarısı';
         });
       }
     });
@@ -248,6 +267,7 @@ class _GazeMainScreenState extends State<GazeMainScreen> {
                           Text(
                             'Geçerli Frame: ${_currentFrame?.valid ?? false ? "Evet" : "Hayır"}',
                           ),
+                          Text('Bölge: $_gazeZone'),
                           if (_currentFrame != null &&
                               _currentFrame!.valid) ...[
                             Text('X: ${_currentFrame!.x.toStringAsFixed(3)}'),

@@ -91,8 +91,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     _collectedFrames.add(frame);
 
-    // Yeterli frame toplandıysa artık otomatik geçme yok; butonla ilerle
-    // Sadece biriktirmeye devam ediyoruz
+    // UI'yi güncel tut (ilerleme ve buton görünürlüğü)
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _processCollectedFrames() {
