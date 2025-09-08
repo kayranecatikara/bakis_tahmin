@@ -78,7 +78,6 @@ class AffineTransform {
     );
   }
 
-  /// Birim dönüşüm (identity)
   factory AffineTransform.identity() {
     return const AffineTransform(
       a: 1.0,
@@ -100,147 +99,153 @@ class CalibrationService {
   bool get isCalibrated => _isCalibrated;
   List<CalibrationPoint> get calibrationPoints =>
       List.unmodifiable(_calibrationPoints);
+  AffineTransform? get transform => _transform;
 
-  /// Kalibrasyon noktası ekle
   void addCalibrationPoint(CalibrationPoint point) {
     _calibrationPoints.add(point);
   }
 
-  /// Kalibrasyon noktalarını temizle
   void clearCalibrationPoints() {
     _calibrationPoints.clear();
     _transform = null;
     _isCalibrated = false;
   }
 
-  /// Afine dönüşüm hesapla (en küçük kareler yöntemi)
-  /// En az 3 nokta gerekli
+  // Çöz: 3x3 lineer sistem (Gaussian elimination, küçük boyut)
+  List<double>? _solve3x3(List<List<double>> A, List<double> b) {
+    // Augmented matrix [A|b]
+    final m = List.generate(3, (i) => List<double>.from(A[i])..add(b[i]));
+    const eps = 1e-12;
+
+    // Forward elimination with partial pivoting
+    for (int col = 0; col < 3; col++) {
+      // Pivot seç
+      int pivot = col;
+      double maxAbs = m[col][col].abs();
+      for (int r = col + 1; r < 3; r++) {
+        final v = m[r][col].abs();
+        if (v > maxAbs) {
+          maxAbs = v;
+          pivot = r;
+        }
+      }
+      if (maxAbs < eps) return null; // singular
+      if (pivot != col) {
+        final tmp = m[col];
+        m[col] = m[pivot];
+        m[pivot] = tmp;
+      }
+      // Normalize pivot row
+      final div = m[col][col];
+      for (int k = col; k < 4; k++) {
+        m[col][k] /= div;
+      }
+      // Eliminate others
+      for (int r = 0; r < 3; r++) {
+        if (r == col) continue;
+        final factor = m[r][col];
+        for (int k = col; k < 4; k++) {
+          m[r][k] -= factor * m[col][k];
+        }
+      }
+    }
+    return [m[0][3], m[1][3], m[2][3]];
+  }
+
+  /// Afine dönüşüm hesapla (en küçük kareler). En az 5 nokta önerilir.
   bool calculateTransform() {
-    if (_calibrationPoints.length < 3) {
-      print('Kalibrasyon için en az 3 nokta gerekli');
-      return false;
-    }
-
-    // Least squares ile afine dönüşüm hesaplama
-    // X' = aX + bY + tx
-    // Y' = cX + dY + ty
-
     final n = _calibrationPoints.length;
-
-    // Matrisleri oluştur
-    double sumX = 0, sumY = 0, sumXX = 0, sumYY = 0, sumXY = 0;
-    double sumXp = 0, sumYp = 0, sumXXp = 0, sumYYp = 0, sumXYp = 0;
-
-    for (final point in _calibrationPoints) {
-      sumX += point.measuredX;
-      sumY += point.measuredY;
-      sumXX += point.measuredX * point.measuredX;
-      sumYY += point.measuredY * point.measuredY;
-      sumXY += point.measuredX * point.measuredY;
-
-      sumXp += point.targetX;
-      sumYp += point.targetY;
-      sumXXp += point.measuredX * point.targetX;
-      sumYYp += point.measuredY * point.targetY;
-      sumXYp += point.measuredX * point.targetY;
-    }
-
-    // Normal denklemler çöz
-    final det =
-        n * (sumXX * sumYY - sumXY * sumXY) -
-        sumX * (sumX * sumYY - sumY * sumXY) +
-        sumY * (sumX * sumXY - sumY * sumXX);
-
-    if (det.abs() < 1e-10) {
-      print('Kalibrasyon noktaları doğrusal bağımlı!');
+    if (n < 3) {
+      print('Kalibrasyon için en az 3 nokta gerekli (öneri: 9).');
       return false;
     }
 
-    // Basitleştirilmiş çözüm (tam least squares yerine)
-    // Bu ilk versiyon için yeterli
-    final avgX = sumX / n;
-    final avgY = sumY / n;
-    final avgXp = sumXp / n;
-    final avgYp = sumYp / n;
+    // Tasarım matrisi X: [xi yi 1]
+    // x' = [a b tx] · X^T ; y' = [c d ty] · X^T
+    double sX = 0, sY = 0, s1 = n.toDouble();
+    double sXX = 0, sYY = 0, sXY = 0;
 
-    // Basit ölçekleme ve öteleme
-    double scaleX = 1.0;
-    double scaleY = 1.0;
+    double sXxP = 0, sYxP = 0, sxP = 0; // bilesenler (x prime için)
+    double sXyP = 0, sYyP = 0, syP = 0; // bilesenler (y prime için)
 
-    if ((sumXX - n * avgX * avgX) > 1e-10) {
-      scaleX = (sumXXp - n * avgX * avgXp) / (sumXX - n * avgX * avgX);
+    for (final p in _calibrationPoints) {
+      final x = p.measuredX;
+      final y = p.measuredY;
+      final xp = p.targetX;
+      final yp = p.targetY;
+      sX += x;
+      sY += y;
+      sXX += x * x;
+      sYY += y * y;
+      sXY += x * y;
+      sXxP += x * xp;
+      sYxP += y * xp;
+      sxP += xp;
+      sXyP += x * yp;
+      sYyP += y * yp;
+      syP += yp;
     }
 
-    if ((sumYY - n * avgY * avgY) > 1e-10) {
-      scaleY = (sumYYp - n * avgY * avgYp) / (sumYY - n * avgY * avgY);
+    // Normal denklemler: [Sxx Sxy Sx; Sxy Syy Sy; Sx Sy N] * [a b tx] = [sum(x*X') sum(y*X') sum(X')]
+    final A = [
+      [sXX, sXY, sX],
+      [sXY, sYY, sY],
+      [sX, sY, s1],
+    ];
+
+    final solX = _solve3x3(A, [sXxP, sYxP, sxP]);
+    final solY = _solve3x3(A, [sXyP, sYyP, syP]);
+    if (solX == null || solY == null) {
+      print(
+        'Kalibrasyon çözülemedi (singular). Nokta dağılımını kontrol edin.',
+      );
+      return false;
     }
 
-    final tx = avgXp - scaleX * avgX;
-    final ty = avgYp - scaleY * avgY;
+    final a = solX[0], b = solX[1], tx = solX[2];
+    final c = solY[0], d = solY[1], ty = solY[2];
+    _transform = AffineTransform(a: a, b: b, c: c, d: d, tx: tx, ty: ty);
 
-    _transform = AffineTransform(
-      a: scaleX,
-      b: 0.0,
-      c: 0.0,
-      d: scaleY,
-      tx: tx,
-      ty: ty,
+    // Hata ölçümü (RMSE)
+    double sse = 0;
+    for (final p in _calibrationPoints) {
+      final pred = _transform!.transform(p.measuredX, p.measuredY);
+      final dx = pred.$1 - p.targetX;
+      final dy = pred.$2 - p.targetY;
+      sse += dx * dx + dy * dy;
+    }
+    final rmse = (sse / n).sqrt();
+    print(
+      'Kalibrasyon tamamlandı: a=$a, b=$b, c=$c, d=$d, tx=$tx, ty=$ty, RMSE=$rmse',
     );
 
     _isCalibrated = true;
-    print(
-      'Kalibrasyon tamamlandı: scaleX=$scaleX, scaleY=$scaleY, tx=$tx, ty=$ty',
-    );
-
-    // Kalibrasyon hatasını hesapla
-    double totalError = 0;
-    for (final point in _calibrationPoints) {
-      final (predX, predY) = _transform!.transform(
-        point.measuredX,
-        point.measuredY,
-      );
-      final errorX = predX - point.targetX;
-      final errorY = predY - point.targetY;
-      totalError += errorX * errorX + errorY * errorY;
-    }
-    final rmse = math.sqrt(totalError / n);
-    print('Kalibrasyon RMSE: $rmse');
-
     return true;
   }
 
-  /// GazeFrame'e kalibrasyon uygula
   GazeFrame applyCalibration(GazeFrame frame) {
     if (!_isCalibrated || _transform == null || !frame.valid) {
       return frame;
     }
-
-    final (calibratedX, calibratedY) = _transform!.transform(frame.x, frame.y);
-
-    // Sınırları kontrol et [0, 1]
-    final clampedX = calibratedX.clamp(0.0, 1.0);
-    final clampedY = calibratedY.clamp(0.0, 1.0);
-
-    return frame.copyWith(x: clampedX, y: clampedY);
+    final (cx, cy) = _transform!.transform(frame.x, frame.y);
+    final nx = cx.clamp(0.0, 1.0);
+    final ny = cy.clamp(0.0, 1.0);
+    return frame.copyWith(x: nx, y: ny);
   }
 
-  /// Kalibrasyonu dosyaya kaydet
   Future<void> saveCalibration() async {
     if (!_isCalibrated || _transform == null) {
       print('Kaydetmek için kalibrasyon yapılmamış');
       return;
     }
-
     try {
       final directory = await getApplicationDocumentsDirectory();
       final file = File('${directory.path}/gaze_calibration.json');
-
       final data = {
         'transform': _transform!.toJson(),
         'points': _calibrationPoints.map((p) => p.toJson()).toList(),
         'timestamp': DateTime.now().toIso8601String(),
       };
-
       await file.writeAsString(jsonEncode(data));
       print('Kalibrasyon kaydedildi: ${file.path}');
     } catch (e) {
@@ -248,31 +253,44 @@ class CalibrationService {
     }
   }
 
-  /// Kalibrasyonu dosyadan yükle
   Future<bool> loadCalibration() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
       final file = File('${directory.path}/gaze_calibration.json');
-
       if (!await file.exists()) {
         print('Kalibrasyon dosyası bulunamadı');
         return false;
       }
-
       final jsonString = await file.readAsString();
       final data = jsonDecode(jsonString);
-
       _transform = AffineTransform.fromJson(data['transform']);
       _calibrationPoints = (data['points'] as List)
           .map((p) => CalibrationPoint.fromJson(p))
           .toList();
       _isCalibrated = true;
-
       print('Kalibrasyon yüklendi (${data['timestamp']})');
       return true;
     } catch (e) {
       print('Kalibrasyon yüklenemedi: $e');
       return false;
     }
+  }
+}
+
+extension MathExtensions on double {
+  double sqrt() => this <= 0 ? 0 : MathHelper.sqrt(this);
+}
+
+class MathHelper {
+  // Basit Newton yöntemi karekök
+  static double sqrt(double v) {
+    double x = v;
+    double last = 0;
+    for (int i = 0; i < 20; i++) {
+      last = x;
+      x = 0.5 * (x + v / x);
+      if ((x - last).abs() < 1e-12) break;
+    }
+    return x;
   }
 }

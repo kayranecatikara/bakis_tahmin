@@ -71,18 +71,18 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _startCollectingForCurrentPoint();
   }
 
-  void _startCollectingForCurrentPoint() async {
+  void _startCollectingForCurrentPoint() {
     if (_currentPointIndex >= _calibrationTargets.length) {
       _finishCalibration();
       return;
     }
 
     // Yerleşme süresi
-    await Future.delayed(_settleTime);
-
-    setState(() {
-      _isCollecting = true;
-      _collectedFrames.clear();
+    Future.delayed(_settleTime).then((_) {
+      setState(() {
+        _isCollecting = true;
+        _collectedFrames.clear();
+      });
     });
   }
 
@@ -97,6 +97,17 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   void _processCollectedFrames() {
     if (_collectedFrames.isEmpty) return;
+
+    if (_collectedFrames.length < _framesPerPoint) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Yeterli örnek toplanmadı. Biraz daha bakın.'),
+          ),
+        );
+      }
+      return;
+    }
 
     // Ortalama pozisyonu hesapla
     double avgX = 0, avgY = 0;
@@ -114,10 +125,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       avgX /= validCount;
       avgY /= validCount;
 
-      // Hedef nokta
       final target = _calibrationTargets[_currentPointIndex];
-
-      // Kalibrasyon noktası ekle
       widget.calibrationService.addCalibrationPoint(
         CalibrationPoint(
           measuredX: avgX,
@@ -128,12 +136,19 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       );
 
       print(
-        'Kalibrasyon noktası $_currentPointIndex: '
-        'Ölçülen($avgX, $avgY) -> Hedef(${target.$1}, ${target.$2})',
+        'Kalibrasyon noktası $_currentPointIndex: Ölçülen($avgX, $avgY) -> Hedef(${target.$1}, ${target.$2})',
       );
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Geçerli frame bulunamadı. Tekrar deneyin.'),
+          ),
+        );
+      }
+      return;
     }
 
-    // Sonraki noktaya geç
     setState(() {
       _isCollecting = false;
       _currentPointIndex++;
@@ -147,38 +162,46 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
       _isCalibrating = false;
     });
 
-    // Dönüşümü hesapla
-    final success = widget.calibrationService.calculateTransform();
-
-    if (success) {
-      // Kalibrasyonu kaydet
-      await widget.calibrationService.saveCalibration();
-
-      // Başarı mesajı
+    // En az 3 nokta zorunlu (öneri 9)
+    if (widget.calibrationService.calibrationPoints.length < 3) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Kalibrasyon başarıyla tamamlandı!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // Ana ekrana dön
-        Navigator.pop(context, true);
-      }
-    } else {
-      // Hata mesajı
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Kalibrasyon başarısız! Lütfen tekrar deneyin.'),
+            content: Text('Yetersiz nokta. En az 3 nokta gerekiyor.'),
             backgroundColor: Colors.red,
           ),
         );
-
-        // Tekrar başlat
-        _startCalibration();
       }
+      // Yeniden başlat
+      _startCalibration();
+      return;
+    }
+
+    final success = widget.calibrationService.calculateTransform();
+
+    if (success) {
+      await widget.calibrationService.saveCalibration();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kalibrasyon başarıyla kaydedildi!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true);
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Kalibrasyon başarısız. Noktaları dağıtarak tekrar deneyin.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      _startCalibration();
     }
   }
 
