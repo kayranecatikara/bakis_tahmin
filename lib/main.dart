@@ -57,9 +57,21 @@ class _GazeMainScreenState extends State<GazeMainScreen> {
     if (!f.valid) return 'Dışarısı';
     final x = f.x;
     final y = f.y;
-    final inside = x >= 0.0 && x <= 1.0 && y >= 0.0 && y <= 1.0;
-    if (!inside) return 'Dışarısı';
-    if (y > 0.85) return 'Kitap';
+
+    // 'Kitap' yalnızca ekran dışı ALTA taşıyorsa ve alt köşe bölgelerine düşüyorsa kabul
+    // Alt dışarısı: y > 1.02 (biraz tolerans)
+    // Köşe tanımı: x <= 0.25 SOL köşe şeridi, x >= 0.75 SAĞ köşe şeridi
+    if (y > 1.02 && (x <= 0.25 || x >= 0.75)) {
+      return 'Kitap';
+    }
+
+    // Kenar bantları (üst/sol/sağ) dışarısı
+    const edge = 0.02; // %2 kenar bandı
+    if (x <= edge || x >= 1 - edge || y <= edge) {
+      return 'Dışarısı';
+    }
+
+    // Ekran üzerinde kalan her şey 'Ekran'
     return 'Ekran';
   }
 
