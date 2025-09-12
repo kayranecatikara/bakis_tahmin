@@ -1,24 +1,34 @@
-# Teknik Notlar / Uyarılar
+# Teknik Notlar / Uyarılar (Yeni Vizyon)
 
-- TrueDepth/ARKit veri yolu sadece **gerçek cihazda**; Simulator desteklemez.
-- iOS projeksiyon:
-  - `ARFaceAnchor.lookAtPoint` (yüz uzayı) + yüz→dünya dönüşümü,
-  - Ekran düzlemiyle kesişim → normalize (x,y).
-  - Alternatif: left/rightEye forward vector + ray-plane.
-- Kalibrasyon:
-  - 5–9 nokta yeterli; 9 tavsiye. Afine ile başla. Gerekirse 2. derece polinom.
-  - Veriyi normalize çalış, cihaz/ekran boyutuna bağlı bağımsızlık sağlar.
-- 1-Euro Filter:
-  - `mincutoff` ~ 1.0, `beta` ~ 0.007 başlangıç; cihaz ve kullanıcıya göre ayarla.
-- Orientation:
-  - İlk sürüm portrait. Landscape için dönüşüm matrisi ekle.
-- Güvenlik/İzin:
-  - `NSCameraUsageDescription` metni anlamlı olsun; App Review’da açıklayıcı.
-- Build/Test:
-  - Xcode’da Team seç, “Automatically manage signing”.
-  - Cihazda `Settings → General → VPN & Device Management` altında developer app’e Trust ver.
-- Performans:
-  - iOS’ta frame başına tek MethodChannel çağrısı. Gerekirse değerleri batch’le.
-  - Flutter tarafında yalnız overlay repaint; büyük setState’lerden kaçın.
-- Gelecek:
-  - App Clip (QR ile anında), TestFlight public link + QR, parametre telemetri.
+- Gerçek cihaz zorunlu (TrueDepth). Simulator desteklemez.
+- iOS bakış hesabı: `lookAtPoint` veya eye forward vectors → ray-plane → normalize (x,y). Mevcut implementasyon korunur.
+- Kalibrasyon: 5–9 nokta; afine fit; parametreleri kullanıcıya ayarlanabilir bırak.
+- 1-Euro filter: mincutoff ve beta ayarlanabilir. Düşük gecikme için tercih edilir.
+- Orientation: İlk sürüm portrait. Landscape TODO.
+
+## Dikkat Algoritması
+- Frame veri modeli: `GazeFrame { x, y, conf, valid, ts }` + (M2) `headPitch` (radyan)
+- Telefon modu: (x,y) in [0..1] ve conf>=0.5 → focused; değilse drifting
+- Kitap modu: `headPitch` aşağı eğim (ör. < -0.15 rad) → focused; değilse drifting (M2 gerektirir)
+- Hibrit: Telefon OR Kitap focused → focused; aksi drifting
+- Uyarı kuralı: drifting toplamı ≥ 10s olduğunda uyarı ve sayaç +1, sonra pencere sıfırlanır
+- Debounce: 500ms altındaki transient değişiklikler ignore
+
+## Firebase
+- `firebase_core`, `firebase_auth`, `cloud_firestore`
+- iOS: `GoogleService-Info.plist` konumu `ios/Runner/`
+- Koleksiyonlar:
+  - `users/{uid}`
+  - `users/{uid}/sessions/{sessionId}`: { startTs, endTs, mode, focusRatio, distractCount, events[] }
+
+## Raporlama
+- Günlük bazda sorgu: `where startTs >= dayStart && < dayEnd`
+- Grafikler: `fl_chart` ile zaman serisi ve gün karşılaştırma
+
+## Performans
+- MethodChannel frame başına tek çağrı; gerekirse throttling
+- Flutter tarafında sadece overlay repaint; geniş setState'lerden kaçın
+
+## Güvenlik
+- Sadece özet metrikler Firestore'a yazılır. Ham frame verileri gönderilmez.
+- Kullanıcı verileri userId altında saklanır.

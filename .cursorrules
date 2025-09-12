@@ -1,33 +1,41 @@
-# Cursor Kuralları — FocusGuard Gaze
+# Cursor Kuralları — FocusGuard Study
 
 [AMAÇ]
-- Sadece bakış noktası tahmini; sınıflandırma/gesture yok.
-- iOS (ARKit) native hesaplar, Flutter sadece çizer ve filtreler.
+- Öğrenciler için dikkat takibi; 3 mod: Kitap, Telefon, Hibrit.
+- iOS (ARKit) native bakış hesabı, Flutter UI + Firebase veri.
 
 [GENEL]
-- Flutter null-safety, küçük fonksiyonlar, bol yorum satırı.
-- Ek bağımlılık ekleme (gerekmedikçe). 1-Euro filtresini kendin yaz.
-- MethodChannel adı: "gaze". start/stop ve onFrame’ı standartlaştır.
+- Flutter null-safety, küçük fonksiyonlar, Türkçe yorumlar + İngilizce değişken isimleri.
+- Ek bağımlılık: sadece Firebase çekirdeği ve basit grafik kütüphanesi.
+- MethodChannel adı: "gaze". start/stop ve onFrame standart.
 - (x,y) normalize [0..1], sol-üst (0,0). Flutter piksele çevirir.
-- Orientation: İlk sürüm portrait. Kodda TODO bırak.
-- Her PR’da README/todo güncellenmiş olsun.
+- Orientation: İlk sürüm portrait. TODO: landscape.
+- Her PR’da README/todo güncel olmalı.
 
 [iOS TARAFI]
-- Swift 5+, `ARFaceTrackingConfiguration`. `ARSessionDelegate`.
+- Swift 5+, `ARFaceTrackingConfiguration`, `ARSessionDelegate`.
 - `lookAtPoint` veya eye forward vectors → ray-plane → normalize (x,y).
 - Her frame tek invoke (onFrame). Gerekirse throttling.
 - `NSCameraUsageDescription` Info.plist. Signing otomatik.
 - Validity: Yüz kaybında `valid=false`.
+- M2: `headEulerAngles.pitch` MethodChannel ile gönder.
 
 [FLUTTER TARAFI]
-- GazeFrame: { x, y, conf, ts, valid }.
-- 1-Euro filter parametreleri ayarlanabilir yap.
+- GazeFrame: { x, y, conf, ts, valid } (+ M2: headPitch).
+- 1-Euro filter parametreleri ayarlanabilir.
 - Kalibrasyon: 5–9 nokta, afine fit. Persist et.
-- UI: Start/Stop, Calibration, Overlay toggle, basit FPS gösterimi.
+- UI: Auth, Home (Ders Çalış), Mod Seçimi, Çalışma, Raporlarım.
+- Çalışma ekranı: Sol 3/5 kamera, sağ 2/5 metrikler + butonlar.
+- Dikkat kuralı: drifting toplam ≥10s uyar.
+
+[DATA]
+- Firestore: `users/{uid}/sessions/{sessionId}`
+- Alanlar: startTs, endTs, mode, focusRatio, distractCount, events[]
+- Log JSONL opsiyonel. Ham frame verisi cloud’a gönderilmez.
 
 [TEST]
-- Gerçek cihazda dene. Simulator’da “mock” sağlama (gerekirse).
-- Log JSONL opsiyon. Dönen verileri manuel doğrula.
+- Gerçek cihazda dene. Simulator’da mock gerekirse basit.
+- Dönen verileri manuel doğrula; günlük raporları kontrol et.
 
 [KOD STİLİ]
 - Türkçe yorumlar + İngilizce değişken isimleri.
@@ -36,8 +44,8 @@
 
 [İSTEMEDİKLERİMİZ]
 - Aşırı bağımlılık, gereksiz mimari ağırlık.
-- Simulator için karmaşık stub’lar (şimdilik gerek yok).
-- Erken aşamada sınıflandırma/gesture denemeleri.
+- Karmaşık simulator stub’ları.
+- Sınıflandırma/gesture (ileride değerlendirilecek).
 
 [LEAD]
-- İlk görev M1’deki iskeleti üret ve çalıştır: iOS köprüsü + Flutter overlay + kalibrasyon + 1-Euro.
+- M1: Auth + modlar + temel dikkat + Firestore + raporlar.
