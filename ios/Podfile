@@ -1,0 +1,47 @@
+# Uncomment this line to define a global platform for your project
+platform :ios, '13.0'
+
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings = File.join(__dir__, 'Flutter', 'Generated.xcconfig')
+  unless File.exist?(generated_xcode_build_settings)
+    raise "Generated.xcconfig must exist. Run 'flutter pub get' first."
+  end
+  File.foreach(generated_xcode_build_settings) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found."
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+# If you have issues with dynamic frameworks, keep static linkage
+# use_frameworks! :linkage => :static
+
+ target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    # Force Swift 5.10 for all pods (required by FirebaseSharedSwift 'sending')
+    target.build_configurations.each do |config|
+      config.build_settings['SWIFT_VERSION'] = '5.10'
+    end
+
+    flutter_additional_ios_build_settings(target)
+  end
+end 
