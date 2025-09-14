@@ -26,6 +26,8 @@ class _StudyScreenState extends State<StudyScreen> {
   DateTime? _lastTick;
   bool _drifting = false;
 
+  static const int attentionThresholdMs = 10000; // 10s
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +40,63 @@ class _StudyScreenState extends State<StudyScreen> {
     setState(() {
       _filteredFrame = calibrated.valid ? calibrated : null;
     });
+    _tickState();
+  }
+
+  void _tickState() {
+    final now = DateTime.now();
+    _lastTick ??= now;
+    final delta = now.difference(_lastTick!).inMilliseconds;
+    _lastTick = now;
+
+    final isFocused = _isFocusedNow();
+    if (isFocused) {
+      _focusedMs += delta;
+      _drifting = false;
+      _driftingMs = 0; // reset window
+    } else {
+      _drifting = true;
+      _driftingMs += delta;
+      if (_driftingMs >= attentionThresholdMs) {
+        _distractCount += 1;
+        _driftingMs = 0; // reset after warning
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Dikkat dağıldı (${widget.mode.name})')),
+          );
+        }
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  bool _isFocusedNow() {
+    final f = _filteredFrame;
+    if (!_isTracking || f == null || !f.valid || f.confidence < 0.5)
+      return false;
+
+    final inScreen = f.x >= 0.0 && f.x <= 1.0 && f.y >= 0.0 && f.y <= 1.0;
+
+    switch (widget.mode) {
+      case StudyMode.phone:
+        return inScreen; // ekran içi → focused
+      case StudyMode.book:
+        // M2: headPitch kullanacağız; şimdilik ekranın alt merkezi yakınını kitap alanı varsayalım
+        const bottomNear = 0.92;
+        const centerBandL = 0.35;
+        const centerBandR = 0.65;
+        final inBook =
+            (f.y >= bottomNear) && (f.x >= centerBandL && f.x <= centerBandR);
+        return inBook;
+      case StudyMode.hybrid:
+        // Ekran içi veya kitap alanı kabul
+        const bottomNear = 0.92;
+        const centerBandL = 0.35;
+        const centerBandR = 0.65;
+        final inBook =
+            (f.y >= bottomNear) && (f.x >= centerBandL && f.x <= centerBandR);
+        return inScreen || inBook;
+    }
   }
 
   Future<void> _toggle() async {
@@ -86,7 +145,6 @@ class _StudyScreenState extends State<StudyScreen> {
       ),
       body: Row(
         children: [
-          // Sol: 3/5 — kamera/overlay alanı
           Expanded(
             flex: 3,
             child: Container(
@@ -111,7 +169,6 @@ class _StudyScreenState extends State<StudyScreen> {
               ),
             ),
           ),
-          // Sağ: 2/5 — metrikler ve butonlar
           Expanded(
             flex: 2,
             child: Padding(
