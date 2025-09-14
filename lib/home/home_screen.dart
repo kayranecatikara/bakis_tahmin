@@ -1,23 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../study/mode_select_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('FocusGuard Study'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => FirebaseAuth.instance.signOut(),
-            tooltip: 'Çıkış',
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('FocusGuard Study')),
       body: SafeArea(
         child: Center(
           child: Padding(
@@ -25,17 +15,16 @@ class HomeScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (user != null)
-                  Text(
-                    user.email ?? '',
-                    style: const TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      // TODO: Navigate to Mode Selection screen
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ModeSelectScreen(),
+                        ),
+                      );
                     },
                     child: const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16.0),
@@ -48,9 +37,7 @@ class HomeScreen extends StatelessWidget {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () {
-                          // TODO: Navigate to Reports screen
-                        },
+                        onPressed: () {},
                         child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12.0),
                           child: Text('Raporlarım'),
@@ -60,9 +47,7 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () {
-                          // TODO: Navigate to Settings screen
-                        },
+                        onPressed: () {},
                         child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12.0),
                           child: Text('Ayarlar'),
