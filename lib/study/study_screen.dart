@@ -38,6 +38,17 @@ class _StudyScreenState extends State<StudyScreen> {
   // Phone mode safe margins to avoid edge flicker
   static const double margin = 0.06; // 6% kenar boşluğu
 
+  // Zone definitions (normalized, landscape). Can be made configurable later.
+  // Screen zone: top-middle rectangle (x: 0.25..0.75, y: 0.08..0.40)
+  static const double screenXMin = 0.25;
+  static const double screenXMax = 0.75;
+  static const double screenYMin = 0.08;
+  static const double screenYMax = 0.40;
+  // Book zone: bottom wide band under the phone (x: 0.06..0.94, y >= 0.60)
+  static const double bookXMin = 0.06;
+  static const double bookXMax = 0.94;
+  static const double bookYMin = 0.60;
+
   @override
   void initState() {
     super.initState();
@@ -113,30 +124,28 @@ class _StudyScreenState extends State<StudyScreen> {
       return false;
 
     // Ekran içi alan — kenarlarda margin uygula
-    final inScreen =
+    final inScreenSafe =
         f.x >= margin &&
         f.x <= 1.0 - margin &&
         f.y >= margin &&
         f.y <= 1.0 - margin;
+    // Top-middle screen rect
+    final inScreenRect =
+        f.x >= screenXMin &&
+        f.x <= screenXMax &&
+        f.y >= screenYMin &&
+        f.y <= screenYMax;
+    // Bottom-wide book band
+    final inBookBand = f.x >= bookXMin && f.x <= bookXMax && f.y >= bookYMin;
 
     switch (widget.mode) {
       case StudyMode.phone:
-        return inScreen;
+        // Ekran modu: ekran dikdörtgenini kullan, ayrıca güvenlik için genel ekran içi de kabul
+        return inScreenRect && inScreenSafe;
       case StudyMode.book:
-        // Geçici kitap alanı: alt-orta band (landscape için yine y alta yakın)
-        const bottomNear = 0.90;
-        const centerBandL = 0.40;
-        const centerBandR = 0.60;
-        final inBook =
-            (f.y >= bottomNear) && (f.x >= centerBandL && f.x <= centerBandR);
-        return inBook;
+        return inBookBand;
       case StudyMode.hybrid:
-        const bottomNear = 0.90;
-        const centerBandL = 0.40;
-        const centerBandR = 0.60;
-        final inBook =
-            (f.y >= bottomNear) && (f.x >= centerBandL && f.x <= centerBandR);
-        return inScreen || inBook;
+        return inScreenRect || inBookBand;
     }
   }
 
