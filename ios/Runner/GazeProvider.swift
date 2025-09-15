@@ -87,9 +87,27 @@ class GazeProvider: NSObject {
         return true
     }
     
+    // MARK: - Head pose (Euler)
+    private func headEulerAngles(from matrix: simd_float4x4) -> simd_float3 {
+        // ZYX konvansiyonu (roll-yaw-pitch). Burada x=pitch (yukarı-aşağı), y=yaw, z=roll döndürür.
+        let sy = sqrt(matrix.columns.0.x * matrix.columns.0.x + matrix.columns.1.x * matrix.columns.1.x)
+        let singular = sy < 1e-6
+        var x: Float, y: Float, z: Float
+        if !singular {
+            x = atan2(matrix.columns.2.y, matrix.columns.2.z)       // pitch
+            y = atan2(-matrix.columns.2.x, sy)                      // yaw
+            z = atan2(matrix.columns.1.x, matrix.columns.0.x)       // roll
+        } else {
+            x = atan2(-matrix.columns.1.z, matrix.columns.1.y)
+            y = atan2(-matrix.columns.2.x, sy)
+            z = 0
+        }
+        return simd_float3(x, y, z)
+    }
+    
     // MARK: - Gaze Calculation
     
-    private func gazeUsingLookAtProjection(faceAnchor: ARFaceAnchor, frame: ARFrame) -> (x: Float, y: Float, confidence: Float)? {
+    private func gazeUsingLookAtProjection(faceAnchor: ARFaceAnchor, frame: ARFrame) -> (x: Float, y: Float, confidence: Float, headPitch: Float)? {
         if #available(iOS 14.0, *) {
             if let lp = faceAnchor.lookAtPoint {
                 let lp4 = simd_float4(lp.x, lp.y, lp.z, 1)
@@ -114,13 +132,14 @@ class GazeProvider: NSObject {
                 nx = max(0, min(1, nx))
                 ny = max(0, min(1, ny))
                 let conf: Float = 0.8
-                return (nx, ny, conf)
+                let euler = headEulerAngles(from: faceAnchor.transform)
+                return (nx, ny, conf, euler.x) // x = pitch
             }
         }
         return nil
     }
     
-    private func calculateGazeFromEyeTransforms(_ faceAnchor: ARFaceAnchor) -> (x: Float, y: Float, confidence: Float)? {
+    private func calculateGazeFromEyeTransforms(_ faceAnchor: ARFaceAnchor) -> (x: Float, y: Float, confidence: Float, headPitch: Float)? {
         let leftEye = faceAnchor.leftEyeTransform
         let rightEye = faceAnchor.rightEyeTransform
         
@@ -151,7 +170,8 @@ class GazeProvider: NSObject {
             nx = max(0, min(1, nx))
             ny = max(0, min(1, ny))
             let confidence: Float = 0.6
-            return (nx, ny, confidence)
+            let euler = headEulerAngles(from: faceAnchor.transform)
+            return (nx, ny, confidence, euler.x)
         }
         return nil
     }
@@ -171,12 +191,12 @@ extension GazeProvider: ARSessionDelegate {
         lastFrameTime = now
         
         if let g = gazeUsingLookAtProjection(faceAnchor: faceAnchor, frame: frame) {
-            sendGazeFrame(x: g.x, y: g.y, confidence: g.confidence, valid: true)
+            sendGazeFrame(x: g.x, y: g.y, confidence: g.confidence, valid: true, headPitch: g.headPitch)
             return
         }
         
         if let g2 = calculateGazeFromEyeTransforms(faceAnchor) {
-            sendGazeFrame(x: g2.x, y: g2.y, confidence: g2.confidence, valid: true)
+            sendGazeFrame(x: g2.x, y: g2.y, confidence: g2.confidence, valid: true, headPitch: g2.headPitch)
         } else {
             sendInvalidFrame()
         }
@@ -192,15 +212,18 @@ extension GazeProvider: ARSessionDelegate {
         sendInvalidFrame()
     }
     
-    private func sendGazeFrame(x: Float, y: Float, confidence: Float, valid: Bool) {
+    private func sendGazeFrame(x: Float, y: Float, confidence: Float, valid: Bool, headPitch: Float?) {
         let timestamp = Int(Date().timeIntervalSince1970 * 1000)
-        let frameData: [String: Any] = [
+        var frameData: [String: Any] = [
             "x": Double(x),
             "y": Double(y),
             "confidence": Double(confidence),
             "timestamp": timestamp,
             "valid": valid
         ]
+        if let hp = headPitch {
+            frameData["headPitch"] = Double(hp)
+        }
         DispatchQueue.main.async { [weak self] in
             self?.channel.invokeMethod("onFrame", arguments: frameData)
         }

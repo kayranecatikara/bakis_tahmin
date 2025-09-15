@@ -49,6 +49,11 @@ class _StudyScreenState extends State<StudyScreen> {
   static const double bookXMax = 0.94;
   static const double bookYMin = 0.60;
 
+  // Head pitch thresholds (radians). Negative = head down.
+  static const double pitchBookDown =
+      -0.15; // <= this → likely looking down to book
+  static const double pitchPhoneUp = 0.20; // >= this → likely away from phone
+
   @override
   void initState() {
     super.initState();
@@ -138,14 +143,28 @@ class _StudyScreenState extends State<StudyScreen> {
     // Bottom-wide book band
     final inBookBand = f.x >= bookXMin && f.x <= bookXMax && f.y >= bookYMin;
 
+    final hp = f.headPitch; // may be null
+
     switch (widget.mode) {
       case StudyMode.phone:
-        // Ekran modu: ekran dikdörtgenini kullan, ayrıca güvenlik için genel ekran içi de kabul
-        return inScreenRect && inScreenSafe;
+        final screenOk = inScreenRect && inScreenSafe;
+        final pitchOk = hp == null
+            ? true
+            : hp < pitchPhoneUp; // baş çok yukarıysa uzaklaşıyor
+        return screenOk && pitchOk;
       case StudyMode.book:
-        return inBookBand;
+        final bandOk = inBookBand;
+        final pitchDown = hp == null
+            ? false
+            : hp <= pitchBookDown; // baş aşağıysa kitap
+        return bandOk || pitchDown; // ikisinden biri yeterli
       case StudyMode.hybrid:
-        return inScreenRect || inBookBand;
+        final screenOkH =
+            inScreenRect &&
+            inScreenSafe &&
+            (hp == null ? true : hp < pitchPhoneUp);
+        final bookOkH = inBookBand || (hp != null && hp <= pitchBookDown);
+        return screenOkH || bookOkH;
     }
   }
 
@@ -233,6 +252,10 @@ class _StudyScreenState extends State<StudyScreen> {
                   Text('Focused (ms): $_focusedMs'),
                   Text('Drifting (ms): $_driftingMs'),
                   Text('Uyarı sayısı: $_distractCount'),
+                  if (_filteredFrame?.headPitch != null)
+                    Text(
+                      'Pitch: ${_filteredFrame!.headPitch!.toStringAsFixed(3)} rad',
+                    ),
                   const Spacer(),
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context),
