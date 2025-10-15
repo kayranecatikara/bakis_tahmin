@@ -6,6 +6,7 @@ import '../overlay/gaze_overlay.dart';
 import '../calibration/calibration_screen.dart';
 import '../calibration/calibration_service.dart';
 import '../logs/session_logger.dart';
+import '../reports/session_result_screen.dart';
 import 'mode_select_screen.dart';
 
 class StudyScreen extends StatefulWidget {
@@ -34,6 +35,11 @@ class _StudyScreenState extends State<StudyScreen> {
 
   bool _isFocused = false;
   int _transitionMs = 0; // debounce for state changes
+
+  // Timeline tracking: zaman bazlı odak durumu
+  final List<Map<String, dynamic>> _focusTimeline = [];
+  DateTime? _lastTimelineRecord;
+  static const int timelineRecordIntervalMs = 1000; // her saniye kaydet
 
   static const int attentionThresholdMs = 10000; // 10s
   static const int stateDebounceMs = 500; // 0.5s
@@ -129,6 +135,17 @@ class _StudyScreenState extends State<StudyScreen> {
       }
     }
 
+    // Timeline kaydı: her saniye odak durumunu kaydet
+    _lastTimelineRecord ??= now;
+    if (now.difference(_lastTimelineRecord!).inMilliseconds >= timelineRecordIntervalMs) {
+      _focusTimeline.add({
+        'timestamp': now.millisecondsSinceEpoch,
+        'focused': _isFocused,
+        'elapsedMs': _focusedMs + _driftingMs,
+      });
+      _lastTimelineRecord = now;
+    }
+
     if (mounted) setState(() {});
   }
 
@@ -190,6 +207,8 @@ class _StudyScreenState extends State<StudyScreen> {
       _focusedMs = 0;
       _driftingMs = 0;
       _distractCount = 0;
+      _focusTimeline.clear();
+      _lastTimelineRecord = null;
       await _sessionLogger.startSession();
       _sessionLogger.logEvent('session_start', {'mode': widget.mode.name});
     }
@@ -237,7 +256,25 @@ class _StudyScreenState extends State<StudyScreen> {
       await _gazeChannel.stop();
       await _finishSession();
     }
-    if (mounted) Navigator.pop(context);
+    
+    // Oturum verilerini topla ve sonuç ekranına git
+    if (mounted && _sessionStart != null) {
+      final duration = DateTime.now().difference(_sessionStart!).inMilliseconds;
+      await Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SessionResultScreen(
+            mode: widget.mode.name,
+            durationMs: duration,
+            focusedMs: _focusedMs,
+            distractCount: _distractCount,
+            focusTimeline: List.from(_focusTimeline),
+          ),
+        ),
+      );
+    } else if (mounted) {
+      Navigator.pop(context);
+    }
   }
 
   @override
