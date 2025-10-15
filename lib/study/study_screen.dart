@@ -137,12 +137,16 @@ class _StudyScreenState extends State<StudyScreen> {
 
     // Timeline kaydı: her saniye odak durumunu kaydet
     _lastTimelineRecord ??= now;
-    if (now.difference(_lastTimelineRecord!).inMilliseconds >= timelineRecordIntervalMs) {
-      _focusTimeline.add({
+    if (now.difference(_lastTimelineRecord!).inMilliseconds >=
+        timelineRecordIntervalMs) {
+      final timelinePoint = {
         'timestamp': now.millisecondsSinceEpoch,
         'focused': _isFocused,
         'elapsedMs': _focusedMs + _driftingMs,
-      });
+      };
+      _focusTimeline.add(timelinePoint);
+      // JSONL'a da kaydet
+      _sessionLogger.logEvent('focus_state', timelinePoint);
       _lastTimelineRecord = now;
     }
 
@@ -256,7 +260,7 @@ class _StudyScreenState extends State<StudyScreen> {
       await _gazeChannel.stop();
       await _finishSession();
     }
-    
+
     // Oturum verilerini topla ve sonuç ekranına git
     if (mounted && _sessionStart != null) {
       final duration = DateTime.now().difference(_sessionStart!).inMilliseconds;

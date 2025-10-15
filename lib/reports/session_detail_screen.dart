@@ -21,6 +21,7 @@ class SessionDetailScreen extends StatefulWidget {
 
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   List<Map<String, dynamic>> _events = [];
+  List<Map<String, dynamic>> _focusTimeline = [];
   bool _loading = true;
 
   @override
@@ -37,14 +38,29 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (await logFile.exists()) {
         final lines = await logFile.readAsLines();
         final events = <Map<String, dynamic>>[];
+        final timeline = <Map<String, dynamic>>[];
+        
         for (final line in lines) {
           final json = jsonDecode(line) as Map<String, dynamic>;
           if (json['type'] == 'event') {
             events.add(json);
+            // Focus timeline verilerini topla (focus_state event'leri)
+            if (json['event_type'] == 'focus_state') {
+              final data = json['data'] as Map<String, dynamic>?;
+              if (data != null) {
+                timeline.add({
+                  'timestamp': json['timestamp'] as int,
+                  'focused': data['focused'] as bool,
+                  'elapsedMs': data['elapsedMs'] as int,
+                });
+              }
+            }
           }
         }
+        
         setState(() {
           _events = events;
+          _focusTimeline = timeline;
           _loading = false;
         });
       } else {
@@ -101,45 +117,113 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   Widget _buildChart() {
-    // Basit odak yüzdesi göstergesi
-    final focusPct = widget.summary.focusRatio * 100;
+    if (_focusTimeline.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text('Zaman çizelgesi verisi mevcut değil.'),
+        ),
+      );
+    }
+
+    // Timeline verisini LineChart için dönüştür
+    final spots = <FlSpot>[];
+    final startTime = _focusTimeline.first['timestamp'] as int;
+    
+    for (final point in _focusTimeline) {
+      final timestamp = point['timestamp'] as int;
+      final focused = point['focused'] as bool;
+      final elapsedSec = (timestamp - startTime) / 1000.0;
+      spots.add(FlSpot(elapsedSec, focused ? 1.0 : 0.0));
+    }
+
+    final durationMs = widget.summary.durationMs;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Odak Grafiği', style: Theme.of(context).textTheme.titleMedium),
+            const Text(
+              'Dikkat Zaman Çizelgesi',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Yeşil: Odaklanmış | Kırmızı: Dağılmış',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
             const SizedBox(height: 16),
             SizedBox(
-              height: 200,
-              child: BarChart(
-                BarChartData(
-                  alignment: BarChartAlignment.center,
-                  maxY: 100,
-                  barGroups: [
-                    BarChartGroupData(x: 0, barRods: [
-                      BarChartRodData(toY: focusPct, color: Colors.green, width: 40),
-                    ]),
-                    BarChartGroupData(x: 1, barRods: [
-                      BarChartRodData(toY: 100 - focusPct, color: Colors.red, width: 40),
-                    ]),
-                  ],
+              height: 250,
+              child: LineChart(
+                LineChartData(
+                  minY: -0.1,
+                  maxY: 1.1,
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: true,
+                    horizontalInterval: 1,
+                  ),
                   titlesData: FlTitlesData(
                     bottomTitles: AxisTitles(
+                      axisNameWidget: const Text('Zaman (saniye)'),
                       sideTitles: SideTitles(
                         showTitles: true,
+                        reservedSize: 30,
+                        interval: (durationMs / 1000 / 5).ceilToDouble().clamp(10, 60),
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 60,
                         getTitlesWidget: (value, meta) {
-                          if (value == 0) return const Text('Odak');
-                          if (value == 1) return const Text('Dağılma');
+                          if (value == 0) return const Text('Dağılmış');
+                          if (value == 1) return const Text('Odaklı');
                           return const Text('');
                         },
                       ),
                     ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(showTitles: true, reservedSize: 40),
-                    ),
                     topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  borderData: FlBorderData(show: true),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: false,
+                      color: Colors.blue,
+                      barWidth: 2,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.green.withOpacity(0.3),
+                            Colors.red.withOpacity(0.3),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: const [0.5, 0.5],
+                        ),
+                      ),
+                    ),
+                  ],
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          final sec = spot.x.toStringAsFixed(0);
+                          final state = spot.y > 0.5 ? 'Odaklı' : 'Dağılmış';
+                          return LineTooltipItem(
+                            '$sec sn\n$state',
+                            const TextStyle(color: Colors.white),
+                          );
+                        }).toList();
+                      },
+                    ),
                   ),
                 ),
               ),

@@ -21,11 +21,9 @@ class SessionResultScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final focusRatio = durationMs > 0 ? (focusedMs / durationMs) : 0.0;
-    
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Çalışma Tamamlandı'),
-      ),
+      appBar: AppBar(title: const Text('Çalışma Tamamlandı')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -36,7 +34,8 @@ class SessionResultScreen extends StatelessWidget {
             _buildTimelineChart(context),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
+              onPressed: () =>
+                  Navigator.popUntil(context, (route) => route.isFirst),
               child: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12.0),
                 child: Text('Ana Ekrana Dön'),
@@ -63,7 +62,10 @@ class SessionResultScreen extends StatelessWidget {
             _buildSummaryRow('Mod', _modeName(mode)),
             _buildSummaryRow('Toplam Süre', _formatDuration(durationMs)),
             _buildSummaryRow('Odaklanma Süresi', _formatDuration(focusedMs)),
-            _buildSummaryRow('Odak Oranı', '${(focusRatio * 100).toStringAsFixed(1)}%'),
+            _buildSummaryRow(
+              'Odak Oranı',
+              '${(focusRatio * 100).toStringAsFixed(1)}%',
+            ),
             _buildSummaryRow('Dikkat Dağılma', '$distractCount kez'),
           ],
         ),
@@ -97,7 +99,7 @@ class SessionResultScreen extends StatelessWidget {
     // Timeline verisini LineChart için dönüştür
     final spots = <FlSpot>[];
     final startTime = focusTimeline.first['timestamp'] as int;
-    
+
     for (final point in focusTimeline) {
       final timestamp = point['timestamp'] as int;
       final focused = point['focused'] as bool;
@@ -138,7 +140,10 @@ class SessionResultScreen extends StatelessWidget {
                       sideTitles: SideTitles(
                         showTitles: true,
                         reservedSize: 30,
-                        interval: (durationMs / 1000 / 5).ceilToDouble().clamp(10, 60),
+                        interval: (durationMs / 1000 / 5).ceilToDouble().clamp(
+                          10,
+                          60,
+                        ),
                       ),
                     ),
                     leftTitles: AxisTitles(
@@ -152,8 +157,12 @@ class SessionResultScreen extends StatelessWidget {
                         },
                       ),
                     ),
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
                   ),
                   borderData: FlBorderData(show: true),
                   lineBarsData: [
@@ -220,4 +229,3 @@ class SessionResultScreen extends StatelessWidget {
     return '${min}dk ${remSec}sn';
   }
 }
-
