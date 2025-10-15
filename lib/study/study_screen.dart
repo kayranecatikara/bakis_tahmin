@@ -5,6 +5,7 @@ import '../gaze/gaze_filter.dart';
 import '../overlay/gaze_overlay.dart';
 import '../calibration/calibration_screen.dart';
 import '../calibration/calibration_service.dart';
+import '../logs/session_logger.dart';
 import 'mode_select_screen.dart';
 
 class StudyScreen extends StatefulWidget {
@@ -18,6 +19,7 @@ class StudyScreen extends StatefulWidget {
 class _StudyScreenState extends State<StudyScreen> {
   final GazeChannel _gazeChannel = GazeChannel();
   final CalibrationService _calibrationService = CalibrationService();
+  final SessionLogger _sessionLogger = SessionLogger();
 
   // Smoothing filter
   late OneEuroFilter2D _filter2d;
@@ -27,6 +29,7 @@ class _StudyScreenState extends State<StudyScreen> {
   int _focusedMs = 0;
   int _driftingMs = 0;
   int _distractCount = 0;
+  DateTime? _sessionStart;
   DateTime? _lastTick;
 
   bool _isFocused = false;
@@ -112,6 +115,12 @@ class _StudyScreenState extends State<StudyScreen> {
       if (_driftingMs >= attentionThresholdMs) {
         _distractCount += 1;
         _driftingMs = 0;
+        // Log warning event
+        _sessionLogger.logEvent('warning', {
+          'mode': widget.mode.name,
+          'focusedMs': _focusedMs,
+          'distractCount': _distractCount,
+        });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Dikkat dağıldı (${widget.mode.name})')),
@@ -154,16 +163,18 @@ class _StudyScreenState extends State<StudyScreen> {
         return screenOk && pitchOk;
       case StudyMode.book:
         final bandOk = inBookBand;
-        final pitchDown = hp == null
-            ? false
-            : hp <= pitchBookDown; // baş aşağıysa kitap
-        return bandOk || pitchDown; // ikisinden biri yeterli
+        // Pitch sadece ekran dikdörtgeninin DIŞINDAYSAN devreye girsin (fallback)
+        final pitchDownFallback =
+            (hp != null && hp <= pitchBookDown) && !inScreenRect;
+        return bandOk || pitchDownFallback;
       case StudyMode.hybrid:
         final screenOkH =
             inScreenRect &&
             inScreenSafe &&
             (hp == null ? true : hp < pitchPhoneUp);
-        final bookOkH = inBookBand || (hp != null && hp <= pitchBookDown);
+        final bookOkH =
+            inBookBand ||
+            ((hp != null && hp <= pitchBookDown) && !inScreenRect);
         return screenOkH || bookOkH;
     }
   }
@@ -171,15 +182,42 @@ class _StudyScreenState extends State<StudyScreen> {
   Future<void> _toggle() async {
     if (_isTracking) {
       await _gazeChannel.stop();
+      await _finishSession();
     } else {
       await _gazeChannel.start();
+      _sessionStart = DateTime.now();
       _lastTick = DateTime.now();
+      _focusedMs = 0;
+      _driftingMs = 0;
+      _distractCount = 0;
+      await _sessionLogger.startSession();
+      _sessionLogger.logEvent('session_start', {'mode': widget.mode.name});
     }
     setState(() => _isTracking = !_isTracking);
   }
 
+  Future<void> _finishSession() async {
+    if (_sessionStart == null) return;
+    final duration = DateTime.now().difference(_sessionStart!).inMilliseconds;
+    final focusRatio = duration > 0 ? (_focusedMs / duration) : 0.0;
+    _sessionLogger.logEvent('session_end', {
+      'mode': widget.mode.name,
+      'durationMs': duration,
+      'focusedMs': _focusedMs,
+      'driftingMs': _driftingMs,
+      'distractCount': _distractCount,
+      'focusRatio': focusRatio,
+    });
+    await _sessionLogger.endSession();
+    _sessionStart = null;
+  }
+
   Future<void> _openCalibration() async {
-    if (_isTracking) await _gazeChannel.stop();
+    if (_isTracking) {
+      await _gazeChannel.stop();
+      await _finishSession();
+      setState(() => _isTracking = false);
+    }
     final res = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -190,15 +228,23 @@ class _StudyScreenState extends State<StudyScreen> {
       ),
     );
     if (res == true && !_isTracking) {
-      await _gazeChannel.start();
-      setState(() => _isTracking = true);
+      // Optionally auto-restart after calibration
     }
+  }
+
+  Future<void> _finishAndExit() async {
+    if (_isTracking) {
+      await _gazeChannel.stop();
+      await _finishSession();
+    }
+    if (mounted) Navigator.pop(context);
   }
 
   @override
   void dispose() {
     if (_isTracking) {
       _gazeChannel.stop();
+      _sessionLogger.endSession();
     }
     super.dispose();
   }
@@ -258,7 +304,7 @@ class _StudyScreenState extends State<StudyScreen> {
                     ),
                   const Spacer(),
                   ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: _finishAndExit,
                     child: const Text('Bitir'),
                   ),
                 ],

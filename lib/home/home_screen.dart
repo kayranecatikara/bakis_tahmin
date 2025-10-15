@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../study/mode_select_screen.dart';
+import '../reports/reports_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -37,7 +38,12 @@ class HomeScreen extends StatelessWidget {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () {},
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ReportsScreen()),
+                          );
+                        },
                         child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12.0),
                           child: Text('Raporlarım'),
